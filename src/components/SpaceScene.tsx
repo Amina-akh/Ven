@@ -6,11 +6,33 @@ import { damp3 } from 'maath/easing'
 import * as THREE from 'three'
 
 /** Номинальная эллиптическая орбита (визуализация + движение спутника), приглушённые тона */
-const ORB = { a: 2.78, e: 0.088, inc: 0.165, meanMotion: 0.032 }
+const ORB = { a: 2.92, e: 0.088, inc: 0.165, meanMotion: 0.052 }
+
+/**
+ * Поворот орбиты вокруг Y: без добавления π — иначе аппарат часто оказывается за диском Венеры
+ * относительно камеры и почти не виден.
+ */
+/** Поворот орбиты: дуга и аппарат в стороне, где в кадре больше «воздуха» справа от текста */
+const ORBIT_YAW = 0.42
+
+/** Дополнительный подъём орбиты по Y — меньше перекрытие сферой Венеры в кадре */
+const ORBIT_Y_LIFT = 0.14
+
+/**
+ * Смещение точки взгляда камеры в сторону отрицательного X в мире:
+ * визуально сцена уезжает вправо относительно центра кадра — орбита и спутник
+ * попадают в область справа от стеклянного блока слайда (текст слева).
+ */
+const LOOK_AT_BIAS: [number, number, number] = [-1.22, 0.05, 0.16]
+
+/** Небольшой сдвиг позиции камеры — чуть шире охват, станция не у края тумана */
+const CAMERA_EXTRA: [number, number, number] = [0.48, 0.12, 0.38]
 
 const _tmpObj = new THREE.Object3D()
 const _tmpTan = new THREE.Vector3()
 const _tmpNext = new THREE.Vector3()
+const _probeStart = new THREE.Vector3()
+orbitSample(0.15, _probeStart)
 
 /** Камера: 10 слайдов — плавные переезды между Венерой, Землёй и орбитой */
 const CAMERA_POINTS: [number, number, number][] = [
@@ -47,8 +69,18 @@ function SmoothCamera({ slideIndex }: { slideIndex: number }) {
 
   useFrame((_, delta) => {
     const i = Math.max(0, Math.min(slideIndex, CAMERA_POINTS.length - 1))
-    goalPos.current.set(...CAMERA_POINTS[i])
-    goalLook.current.set(...LOOK_POINTS[i])
+    const [cx, cy, cz] = CAMERA_POINTS[i]
+    goalPos.current.set(
+      cx + CAMERA_EXTRA[0],
+      cy + CAMERA_EXTRA[1],
+      cz + CAMERA_EXTRA[2],
+    )
+    const [lx, ly, lz] = LOOK_POINTS[i]
+    goalLook.current.set(
+      lx + LOOK_AT_BIAS[0],
+      ly + LOOK_AT_BIAS[1],
+      lz + LOOK_AT_BIAS[2],
+    )
     damp3(camera.position, goalPos.current, 0.92, delta, 28)
     damp3(smoothLook.current, goalLook.current, 0.88, delta, 22)
     camera.lookAt(smoothLook.current)
@@ -225,7 +257,11 @@ function orbitSample(nu: number, target: THREE.Vector3) {
   const z = r * sin
   const y = z * Math.sin(ORB.inc)
   const zz = z * Math.cos(ORB.inc)
-  target.set(x, y + 0.018, zz)
+  const cy = Math.cos(ORBIT_YAW)
+  const sy = Math.sin(ORBIT_YAW)
+  const xr = x * cy - zz * sy
+  const zr = x * sy + zz * cy
+  target.set(xr, y + 0.018 + ORBIT_Y_LIFT, zr)
 }
 
 /** Номинальная орбита — тонкая линия для учебной 3D-визуализации */
@@ -243,10 +279,10 @@ function NominalOrbitPath() {
   return (
     <Line
       points={pts}
-      color="#6a7588"
-      lineWidth={1}
+      color="#7a8ca8"
+      lineWidth={1.35}
       transparent
-      opacity={0.32}
+      opacity={0.4}
       depthWrite={false}
     />
   )
@@ -427,7 +463,7 @@ function SolarWing({ side }: { side: 1 | -1 }) {
 function VeneraProbe() {
   const root = useRef<THREE.Group>(null)
   const spinner = useRef<THREE.Group>(null)
-  const smoothPos = useRef(new THREE.Vector3(2.6, 0.12, 0.9))
+  const smoothPos = useRef(_probeStart.clone())
   const rawPos = useRef(new THREE.Vector3())
 
   useFrame(({ clock }, delta) => {
@@ -456,7 +492,7 @@ function VeneraProbe() {
   })
 
   return (
-    <group ref={root}>
+    <group ref={root} scale={1.14} renderOrder={10}>
       <group ref={spinner}>
       <mesh castShadow receiveShadow>
         <cylinderGeometry args={[0.11, 0.17, 0.62, 32]} />
@@ -575,7 +611,7 @@ export function SpaceScene({ slideIndex }: { slideIndex: number }) {
       <Canvas
         shadows
         dpr={[1, 2]}
-        camera={{ position: [6.35, 0.42, 6.55], fov: 40 }}
+        camera={{ position: [6.35, 0.42, 6.55], fov: 43 }}
         gl={{
           antialias: true,
           alpha: true,
@@ -583,7 +619,7 @@ export function SpaceScene({ slideIndex }: { slideIndex: number }) {
         }}
       >
         <color attach="background" args={['#060810']} />
-        <fog attach="fog" args={['#070a12', 11, 38]} />
+        <fog attach="fog" args={['#070a12', 12, 48]} />
 
         <SmoothCamera slideIndex={slideIndex} />
         <SunLight />
